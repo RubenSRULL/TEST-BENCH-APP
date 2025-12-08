@@ -29,7 +29,7 @@
 // --- VARIABLES --- //
 const char* ssid = "OPPO A53";
 const char* password = "611b10a883c5";
-const char* mqtt_server = "10.251.249.63";
+const char* mqtt_server = "10.74.94.63";
 int vel_init = 0;
 int vel_last = 0;
 int step = 0;

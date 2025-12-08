@@ -1,83 +1,42 @@
-#----- LIBRARIES -----#
-from dash import Dash, dcc, html, Input, Output, callback, dash_table
+# =====================================
+# BANCO DE PRUEBAS - DASH + TESTBENCH
+# Interfaz renovada estilo versión 2 pero usando TestBench
+# =====================================
+
+# ----- LIBRARIES ----- #
+from dash import Dash, dcc, html, Input, Output
 import plotly.express as px
-import paho.mqtt.client as mqtt
-import subprocess
-import time
 import json
-import os
+from lib.TestBech import TestBench
 
-
-#----- VARIABLES -----#
+# ----- MQTT CONFIG ----- #
 topicReceive = "esp32/output"
 topicSend = "esp32/input"
-broker_IP = "10.251.249.63"
+broker_IP = "10.74.94.63"
 broker_PORT = 1883
-mosquitto_path = r"C:\Program Files\mosquitto\mosquitto.exe"
-mosquitto_conf = r"C:\Program Files\mosquitto\mosquitto.conf"
-latest_data = {"velocity": [], "thrust": [], "torque": [], "current": []}
-porcentaje, velocidad, empuje, par, corriente = [], [], [], [], []
-client = None
+mosquitto_path = r"C:\\Program Files\\mosquitto\\mosquitto.exe"
+mosquitto_conf = r"C:\\Program Files\\mosquitto\\mosquitto.conf"
 
-#----- FUNCIONES MQTT -----#
-def iniciar_broker():
-    try:
-        if not any("mosquitto" in p for p in os.popen('tasklist').read().splitlines()):
-            subprocess.Popen(
-                f'"{mosquitto_path}" -v -c "{mosquitto_conf}"',
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            print("Broker Mosquitto iniciado en segundo plano.")
-            time.sleep(3)
-        else:
-            print("Broker Mosquitto ya en ejecución.")
-    except Exception as e:
-        print(f"Error al iniciar el broker: {e}")
+# ----- TESTBENCH INSTANCE ----- #
+tb = TestBench()
 
+tb.configMQTTBroker(
+    broker_IP,
+    broker_PORT,
+    mosquitto_path,
+    mosquitto_conf
+)
 
-def iniciar_mqtt():
-    global client
-    if client is None:
-        try:
-            iniciar_broker()
-            client = mqtt.Client(
-                protocol=mqtt.MQTTv5,
-                callback_api_version=mqtt.CallbackAPIVersion.VERSION2
-            )
-            client.on_message = on_message
-            client.connect(broker_IP, broker_PORT)
-            client.subscribe(topicReceive)
-            client.loop_start()
-            print("Cliente MQTT conectado.")
-        except Exception as e:
-            print(f"Error al conectar MQTT: {e}")
+tb.configMQTT(
+    topicSend=topicSend,
+    topicReceive=topicReceive
+)
 
-
-def on_message(client, userdata, msg):
-    try:
-        data = json.loads(msg.payload.decode())
-        #{"velocity": 1000, "thrust": 5, "torque": 0.3, "current": 2}
-        latest_data["velocity"].append(data.get("velocity", 0))
-        latest_data["thrust"].append(data.get("thrust", 0))
-        latest_data["torque"].append(data.get("torque", 0))
-        latest_data["current"].append(data.get("current", 0))
-        print("Datos recibidos:\n")
-        print(f"Velocidad -> {data.get("velocity", 0)}")
-        print(f"Empuje -> {data.get("thrust", 0)}")
-        print(f"Torque -> {data.get("torque", 0)}")
-        print(f"Corriente -> {data.get("current", 0)}")
-    except Exception as e:
-        print(f"Error parsing MQTT message: {e}")
-
-
-
-#----- APP DASH -----#
+# ----- APP DASH ----- #
 app = Dash(__name__)
+app.title = "Banco de Pruebas"
 
-
-#----- CSS STYLES -----#
+# ----- CSS STYLES ----- #
 main_style = {
     "fontFamily": "Arial, sans-serif",
     "backgroundColor": "#f5f7fa",
@@ -92,10 +51,7 @@ card_style = {
     "boxShadow": "0 2px 6px rgba(0,0,0,0.1)"
 }
 
-title_style = {
-    "color": "#003366", 
-    "marginBottom": "10px"
-}
+title_style = {"color": "#003366", "marginBottom": "10px"}
 
 button_style = {
     "backgroundColor": "#0066cc",
@@ -107,107 +63,60 @@ button_style = {
     "margin": "5px"
 }
 
-display_box = {
-    "backgroundColor": "#e6f0ff",
-    "border": "1px solid #b3c6ff",
-    "borderRadius": "8px",
-    "padding": "10px 20px",
-    "textAlign": "center",
-    "flex": "1"
-}
+# ----- AUX MQTT SENDER USING TESTBENCH ----- #
+def send_action(action, data=None):
+    payload = {"action": action}
+    if data:
+        payload["data"] = data
+    tb.sendMQTT(tb.topicSend, json.dumps(payload))
 
-#----- LAYOUT -----#
+
+# ----- LAYOUT ----- #
 app.layout = html.Div(style=main_style, children=[
-    
+
     html.H1("Banco de Pruebas", style=title_style),
 
     html.Div(style=card_style, children=[
         html.H3("Parámetros de la hélice", style=title_style),
-
-        html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"}, children=[
-            html.Div([
-                html.Label("Modelo"),
-                dcc.Input(id="propName", type="text", style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("Paso (in)"),
-                dcc.Input(id="pitch", type="number", style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("Diámetro (in)"),
-                dcc.Input(id="diameter", type="number", style={"width": "150px"})
-            ])
-        ])
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"},
+            children=[
+                html.Div([html.Label("Modelo"), dcc.Input(id="propName", type="text")]),
+                html.Div([html.Label("Paso (in)"), dcc.Input(id="pitch", type="number")]),
+                html.Div([html.Label("Diámetro (in)"), dcc.Input(id="diameter", type="number")]),
+            ]
+        )
     ]),
 
     html.Div(style=card_style, children=[
         html.H3("Parámetros del motor", style=title_style),
-
-        html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"}, children=[
-            html.Div([
-                html.Label("Modelo"),
-                dcc.Input(id="motorName", type="text", style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("Voltaje (V)"),
-                dcc.Input(id="voltage", type="number", style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("KV"),
-                dcc.Input(id="kv", type="number", style={"width": "150px"})
-            ]),
-            
-            html.Div([
-                html.Label("Corriente máx (A)"),
-                dcc.Input(id="maxCurrent", type="number", style={"width": "150px"})
-            ])
-        ])
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"},
+            children=[
+                html.Div([html.Label("Modelo"), dcc.Input(id="motorName", type="text")]),
+                html.Div([html.Label("Voltaje (V)"), dcc.Input(id="voltage", type="number")]),
+                html.Div([html.Label("KV"), dcc.Input(id="kv", type="number")]),
+                html.Div([html.Label("Corriente Máx (A)"), dcc.Input(id="maxCurrent", type="number")]),
+            ]
+        )
     ]),
 
     html.Div(style=card_style, children=[
         html.H3("Parámetros del ensayo", style=title_style),
 
-        html.Div(style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"}, children=[
-
-            html.Div([
-                html.Label("Nombre del ensayo"),
-                dcc.Input(id="testName", type="text", style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("Número de pasos"),
-                dcc.Input(id="step", type="number", style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("Velocidad inicio (%)"),
-                dcc.Input(id="vel_init", type="number", style={"width": "150px"})
-            ]),
-
-
-            html.Div([
-                html.Label("Duración por paso (s)"),
-                dcc.Input(id="stepTime", type="number", step=0.1, style={"width": "150px"})
-            ]),
-
-            html.Div([
-                html.Label("Velocidad final (%)"),
-                dcc.Input(id="vel_last", type="number", style={"width": "150px"})
-            ]),
-
-
-            html.Div([
-                html.Label("Número de vueltas"),
-                dcc.Input(id="cicles", type="number", style={"width": "150px"})
-            ])
-        ]),
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"},
+            children=[
+                html.Div([html.Label("Nombre del ensayo"), dcc.Input(id="testName", type="text")]),
+                html.Div([html.Label("Número de pasos"), dcc.Input(id="step", type="number")]),
+                html.Div([html.Label("Velocidad inicio (%)"), dcc.Input(id="vel_init", type="number")]),
+                html.Div([html.Label("Duración por paso (s)"), dcc.Input(id="stepTime", type="number")]),
+                html.Div([html.Label("Velocidad final (%)"), dcc.Input(id="vel_last", type="number")]),
+                html.Div([html.Label("Número de vueltas"), dcc.Input(id="cicles", type="number")]),
+            ]
+        ),
 
         html.H4("Variables a medir", style={"marginTop": "20px"}),
-
         dcc.Checklist(
             id="measure_flags",
             options=[
@@ -222,16 +131,13 @@ app.layout = html.Div(style=main_style, children=[
 
     html.Div(style=card_style, children=[
         html.H3("Celdas de carga", style=title_style),
-
-        html.Div(style={"display": "flex", "justifyContent": "space-around"}, children=[
-
-            html.Div(children=[
+        html.Div(style={"display": "flex", "justifyContent": "space-evenly"}, children=[
+            html.Div([
                 html.H4("Empuje"),
                 html.Button("Tarar", id="tare1", style=button_style),
                 html.Button("Calibrar", id="calibrate1", style=button_style)
             ]),
-
-            html.Div(children=[
+            html.Div([
                 html.H4("Par"),
                 html.Button("Tarar", id="tare2", style=button_style),
                 html.Button("Calibrar", id="calibrate2", style=button_style)
@@ -246,30 +152,17 @@ app.layout = html.Div(style=main_style, children=[
     ]),
 
     html.Div(style=card_style, children=[
-        html.H3("Gráfico de variables vs Velocidad", style=title_style),
+        html.H3("Datos en tiempo real", style=title_style),
         dcc.Graph(id="live-graph"),
-        dcc.Interval(
-            id="interval-update",
-            interval=1000,
-            n_intervals=0
-        )
+        dcc.Interval(id="interval-update", interval=1000)
     ])
 ])
 
 
-
-#----- CALLBACKS -----#
+# ----- CALLBACKS ----- #
 @app.callback(
     Input("start", "n_clicks"),
     [
-        Input("propName", "value"),
-        Input("diameter", "value"),
-        Input("pitch", "value"),
-        Input("motorName", "value"),
-        Input("kv", "value"),
-        Input("voltage", "value"),
-        Input("maxCurrent", "value"),
-        Input("testName", "value"),
         Input("vel_init", "value"),
         Input("vel_last", "value"),
         Input("stepTime", "value"),
@@ -278,106 +171,62 @@ app.layout = html.Div(style=main_style, children=[
         Input("measure_flags", "value")
     ]
 )
-def startTest(start_clicks,
-                     propName, diameter, pitch,
-                     motorName, kv, voltage, maxCurrent,
-                     testName, vel_init, vel_last, stepTime, step, cicles,
-                     measure_flags):
-    if not start_clicks:
-        return "Esperando para iniciar ensayo..."
-    
-    else:
-        test_data = {
-            "Helice": {
-                "Modelo": propName,
-                "Diámetro (in)": diameter,
-                "Paso (in)": pitch
-            },
-            "Motor": {
-                "Modelo": motorName,
-                "KV": kv,
-                "Voltaje (V)": voltage,
-                "Corriente Máx (A)": maxCurrent
-            },
-            "Ensayo": {
-                "Nombre": testName,
-                "Velocidad inicio": vel_init,
-                "Velocidad final": vel_last,
-                "Duracion por paso": stepTime,
-                "Pasos": step,
-                "Vueltas": cicles,
-                "Variables medidas": measure_flags
-            }
-        }
-        payload = json.dumps({
-            "action": "start",
-            "data": {
-                "vel_init": vel_init,
-                "vel_last": vel_last,
-                "stepTime": stepTime,
-                "step": step,
-                "cicles": cicles,
-                "measure_rpm": "measure_rpm" in measure_flags,
-                "measure_thrust": "measure_thrust" in measure_flags,
-                "measure_torque": "measure_torque" in measure_flags,
-                "measure_current": "measure_current" in measure_flags
-            }
-        }, indent=4)
+def start_test(n, vel_init, vel_last, stepTime, step, cicles, measure_flags):
+    if not n:
+        return
 
-        client.publish(topicSend, payload)
-        print(f"→ MQTT enviado: {payload}")
+    # LIMPIAR DATOS DEL GRAFICO
+    tb._pct.clear()
+    tb._thrusts.clear()
+    tb._torques.clear()
+    tb._currents.clear()
+
+    config = {
+        "vel_init": vel_init,
+        "vel_last": vel_last,
+        "stepTime": stepTime,
+        "step": step,
+        "cicles": cicles,
+        "measure_rpm": "measure_rpm" in (measure_flags or []),
+        "measure_thrust": "measure_thrust" in (measure_flags or []),
+        "measure_torque": "measure_torque" in (measure_flags or []),
+        "measure_current": "measure_current" in (measure_flags or [])
+    }
+
+    tb.setTestConfig(config)
+    send_action("start", config)
+    print("Ensayo iniciado")
 
 
-@app.callback(
-    Input("stop", "n_clicks")
-)
-def stopTest(clicks):
-    print("STOP TEST")
-    payload = json.dumps({
-        "action": "stop",
-    }, indent=4)
-    client.publish(topicSend, payload)
 
-@app.callback(
-    Input("tare1", "n_clicks")
-)
-def tare(clicks):
-    print("Tare 1")
-    payload = json.dumps({
-        "action": "tare1",
-    }, indent=4)
-    client.publish(topicSend, payload)
+@app.callback(Input("stop", "n_clicks"))
+def stop_test(n):
+    if n:
+        send_action("stop")
 
-@app.callback(
-    Input("tare2", "n_clicks")
-)
-def tare(clicks):
-    print("Tare 2")
-    payload = json.dumps({
-        "action": "tare2",
-    }, indent=4)
-    client.publish(topicSend, payload)
 
-@app.callback(
-    Input("calibrate1", "n_clicks")
-)
-def calibrate(clicks):
-    print("Calibrate 1")
-    payload = json.dumps({
-        "action": "calibrate1",
-    }, indent=4)
-    client.publish(topicSend, payload)
+@app.callback(Input("tare1", "n_clicks"))
+def tare1(n):
+    if n:
+        send_action("tare1")
 
-@app.callback(
-    Input("calibrate2", "n_clicks")
-)
-def calibrate(clicks):
-    print("Calibrate 2")
-    payload = json.dumps({
-        "action": "calibrate2",
-    }, indent=4)
-    client.publish(topicSend, payload)
 
+@app.callback(Input("tare2", "n_clicks"))
+def tare2(n):
+    if n:
+        send_action("tare2")
+
+
+@app.callback(Input("calibrate1", "n_clicks"))
+def cal1(n):
+    if n:
+        send_action("calibrate1")
+
+
+@app.callback(Input("calibrate2", "n_clicks"))
+def cal2(n):
+    if n:
+        send_action("calibrate2")
 
 
 @app.callback(
@@ -385,21 +234,23 @@ def calibrate(clicks):
     Input("interval-update", "n_intervals")
 )
 def update_graph(n):
-    if not latest_data["velocity"]:
+    if not tb._pct:
         return px.line(title="Esperando datos...")
+
     fig = px.line(
-        x=latest_data["velocity"],
-        y=[latest_data["thrust"], latest_data["torque"], latest_data["current"]],
-        labels={"x": "Velocidad (%)", "y": "Valor"},
+        x=tb._pct,
+        y=[tb._thrusts, tb._torques, tb._currents],
+        labels={"x": "Velocidad (%)", "value": "Magnitud"},
         title="Variables vs Velocidad"
     )
+
     fig.data[0].name = "Empuje"
     fig.data[1].name = "Par"
     fig.data[2].name = "Corriente"
+
     return fig
 
 
-#----- MAIN -----#
-if __name__ == '__main__':
-    iniciar_mqtt()
+# ----- MAIN ----- #
+if __name__ == "__main__":
     app.run(debug=False)
