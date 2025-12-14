@@ -1,8 +1,8 @@
-#################################
-#NAME: Ruben Sahuquillo Redondo
-#SIGNATURE: Sistemas Embebidos
-#PROYECTO FINAL
-#################################
+# =====================================
+# NOMBRE: Ruben Sahuquillo Redondo
+# ASIGNATURA: Lenguajes de Alto Nivel para Aplicaciones Industriales
+# DESCRIPCION: Libreria desarrollada para facilitar la comunicacion con el banco de pruebas
+# =====================================
 
 
 #----- LIBRERIAS -----#
@@ -13,12 +13,14 @@ import json
 import os
 import csv
 import math
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
 #----- CLASE -----#
 class TestBench:
-    #CONSTRUCTOR
+    #Constructor
     def __init__(self):
         self._pct = []
         self._speeds = []
@@ -32,14 +34,16 @@ class TestBench:
         self.topicSend = None
         self._brokerIP = None
         self._brokerPORT = None
+        self.first_message_received = False
 
-        self._Kt = None
-        self._Kv = None
-        self._potencia_electrica = None
-        self._potencia_mecanica = None
-        self._rendimiento = None
+        self._Kt = []
+        self._Kv = []
+        self._potencia_electrica = []
+        self._potencia_mecanica = []
+        self._rendimiento = []
 
-        self._config = None
+        self._testName = ""
+        self._testInfo = ""
 
         self._config = {}
 
@@ -51,40 +55,43 @@ class TestBench:
         os.makedirs(self.log_path, exist_ok=True)
 
 
-    #CONFIGURAR BROKER MQTT
-    def configMQTTBroker(self, broker_ip, broker_port, 
-                            mosquitto_path = r"C:\Program Files\mosquitto\mosquitto.exe",
-                            mosquitto_conf = r"C:\Program Files\mosquitto\mosquitto.conf"):
-            """Inicializa el broker MQTT si no está inicializado"""
-            self._brokerIP = str(broker_ip)
-            self._brokerPORT = int(broker_port)
+    #Configurar broker MQTT
+    def configMQTTBroker(self, broker_ip, broker_port, mosquitto_path = r"C:\Program Files\mosquitto\mosquitto.exe", mosquitto_conf = r"C:\Program Files\mosquitto\mosquitto.conf"):
+        """Inicializa el broker MQTT si no está inicializado"""
+        self._brokerIP = str(broker_ip)
+        self._brokerPORT = int(broker_port)
 
-            try:
-                if not any("mosquitto" in p for p in os.popen('tasklist').read().splitlines()):
-                    subprocess.Popen(f'"{mosquitto_path}" -v -c "{mosquitto_conf}"',
-                                    shell=True,
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL
-                                    )
-                    print("Broker Mosquitto iniciado en segundo plano.")
-                    time.sleep(2)
-                else:
-                    print("Broker Mosquitto en ejecución.")
+        try:
+            # Si el borker mosquito no esta en la lista de tareas en ejecucion
+            if not any("mosquitto" in p for p in os.popen('tasklist').read().splitlines()):
+                # Iniciar subproceso, lanzado mosquito cy su configuracion
+                subprocess.Popen(f'"{mosquitto_path}" -v -c "{mosquitto_conf}"',
+                                 shell=True,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL
+                                )
+                print("Broker Mosquitto iniciado en segundo plano.")
+                time.sleep(2)
+            # Si esta en la lista de tareas en ejecucion
+            else:
+                print("Broker Mosquitto en ejecución.")
 
-            except Exception as e:
-                print(f"Error al iniciar el broker: {e}")
+        except Exception as e:
+            print(f"Error al iniciar el broker: {e}")
 
 
-    #CONFIGURAR MQTT
+    # Configurar MQTT
     def configMQTT(self, topicSend, topicReceive):
         """Configura la conexión MQTT y se realiza la subscripción a los tópicos indicados"""
         self.topicSend = topicSend
         self.topicReceive = topicReceive
-
+        # Si la ip del broker no es None o el puerto del broker es None, lanzar excepcion
         if self._brokerIP is None or self._brokerPORT is None:
             raise ValueError("Debe configurar primero el broker con configMQTTBroker()")
         
+        # Si ip y puerto son validos
         else:
+            # Si el cliente no es None
             if self._client is None:
                 try:
                     self._client = mqtt.Client()
@@ -100,21 +107,27 @@ class TestBench:
                     print(f"Error al conectar MQTT: {e}")
 
 
-    #ENVIAR MQTT
+    #Enviar MQTT
     def sendMQTT(self, topicSend, msg):
+        #Si el cliente es None
         if self._client is None:
             print("Error: cliente MQTT no inicializado.")
             return
-            
-        try:
-            self._client.publish(topicSend, msg)
+        #Si el cliente no es None, publicar mensaje MQTT
+        else:
+            try:
+                self._client.publish(topicSend, msg)
 
-        except Exception as e:
-            print(f"No se pudo enviar MQTT: {e}")
+            except Exception as e:
+                print(f"No se pudo enviar MQTT: {e}")
 
 
-    #RECIBIR MQTT
+    #Callback de recepcion del MQTT
     def receiveMQTT(self, client, userdata, msg):
+        if not self.first_message_received:
+            self.first_message_received = True
+            return
+        
         try:
             payload = msg.payload.decode().strip()
 
@@ -136,7 +149,7 @@ class TestBench:
             empuje = round(data.get("Empuje", 0.0), 2)
             par = round(data.get("Par", 0.0), 2)
             intensidad = round(data.get("Intensidad", 0.0), 2)
-            voltaje = round(data.get("Voltaje", 0.0), 2)
+            voltaje = 12.00
 
             self._pct.append(pct)
             self._speeds.append(rpm)
@@ -151,11 +164,14 @@ class TestBench:
                 self.finish()
 
         except json.JSONDecodeError:
-            print(f"JSON inválido recibido: {payload}")
+            print(f"No es JSON, es info: {payload}")
         except Exception as e:
             print(f"Error al recibir datos MQTT: {e}")
 
-
+    #SET INFORMACION DEL TEST
+    def setTestInfo(self, propeller, pitch, diameter, motor, kv, max_current):
+        self._testName = f"Test - Motor {motor} - Propeller {propeller} {diameter}x{pitch}"
+        self._testInfo = f"Test - Motor {motor} (KV = {kv}, Imax = {max_current}) - Propeller {propeller} {diameter}x{pitch}"
 
 
     #FINALIZAR ENSAYO
@@ -172,70 +188,69 @@ class TestBench:
         print(f"Informe generado en: {self.log_path}")
         print(f"Gráficas generadas en: {self.fig_path}")
         print("\nProceso finalizado.")
-        self.disconnect()
-
-
-    #DESCONECTAR MQTT
-    def disconnect(self):
-        if self._client:
-            self._client.loop_stop()
-            self._client.disconnect()
-            print("MQTT desconectado.")
 
 
     #CALCULAR PARÁMETROS ENSAYO
     def computeParameters(self):
-        """Realiza el cálculo de los parámetros del motor"""
-        Kt = Kv = rendimiento = 0
+        """Cálculo de parámetros del motor con unidades SI"""
 
-        if not self._currents or not self._voltages or not self._thrusts or not self._torques or not self._pct or not self._speeds:
-            return Kt, Kv, rendimiento, [], []
+        self._Kt = []
+        self._Kv = []
+        self._rendimiento = []
+        self._potencia_electrica = []
+        self._potencia_mecanica = []
+
+        if not self._currents or not self._voltages or not self._torques or not self._speeds:
+            return [], [], [], [], []
         
         else:
-            Kt = []
+            # CONVERSIONES
+            torques_nm = [(((t / 1000) * 9.81) / 100) for t in self._torques]  # g·cm → N·m
+            omegas = [rpm * 2 * math.pi / 60 for rpm in self._speeds]  # RPM → rad/s
 
-            for torque, current in zip(self._torques, self._currents):
+            # Kt (Nm / A)
+            for torque, current in zip(torques_nm, self._currents):
                 if current != 0:
-                    Kt.append(torque / current)
+                    self._Kt.append(torque / current)
                 else:
+                    self._Kt.append(0)
 
-                    Kt.append(0)
-            Kt = sum(Kt) / len(Kt)
 
-            Kv = []
-            for speed, voltage in zip(self._speeds, self._voltages):
+            # Kv (rad/s / V)
+            for omega, voltage in zip(omegas, self._voltages):
                 if voltage != 0:
-                    Kv.append(speed / voltage)
+                    self._Kv.append(omega / voltage)
                 else:
-                    Kv.append(0)
-            Kv = sum(Kv) / len(Kv)
+                    self._Kv.append(0)
 
-            potencia_electrica = []
-            for current, voltage in zip(self._currents, self._voltages):
-                potencia_electrica.append(voltage * current)
 
-            potencia_mecanica = []
-            for speed, torque in zip(self._speeds, self._torques):
-                omega = speed * 2 * math.pi / 60
-                potencia_mecanica.append(torque * omega)
+            # Potencias
+            self._potencia_electrica = [
+                v * i for v, i in zip(self._voltages, self._currents)
+            ]
 
-            rendimiento = []
-            for pe, pm in zip(potencia_electrica, potencia_mecanica):
+            self._potencia_mecanica = [
+                t * w for t, w in zip(torques_nm, omegas)
+            ]
+
+
+            # Rendimiento (imperfecto)
+            for pe, pm in zip(self._potencia_electrica, self._potencia_mecanica):
                 if pe != 0:
-                    rendimiento.append(pm / pe)
+                    self._rendimiento.append(pm / pe)
                 else:
-                    rendimiento.append(0)
-            
-            rendimiento = sum(rendimiento) / len(rendimiento)
-
-        return Kt, Kv, rendimiento, potencia_electrica, potencia_mecanica
+                    self._rendimiento.append(0)
 
 
-    #GENERAR INFORME
+            return self._Kt, self._Kv, self._rendimiento, self._potencia_electrica, self._potencia_mecanica
+
+
+
+    #Generar informe
     def reportGenerate(self, filename):
         """Genera un informe .csv con los resultados del test"""
 
-        fullpath = os.path.join(self.log_path, filename + '.csv')
+        fullpath = os.path.join(self.log_path, self._testInfo + '.csv')
 
         with open(fullpath, mode='w', newline='') as file:
             writer = csv.writer(file)
@@ -254,17 +269,24 @@ class TestBench:
             writer.writerow(["Rendimiento", self._rendimiento])
 
 
-    #GENERAR FIGURAS
+    #Generar figuras
     def figureGenerate(self, name):
         """Genera gráficas con las curvas obtenidas en el ensayo"""
+
+        print("LEN pct:", len(self._pct))
+        print("LEN speeds:", len(self._speeds))
+        print("LEN Kt:", len(self._Kt))
+        print("LEN Kv:", len(self._Kv))
+        print("LEN rendimiento:", len(self._rendimiento))
+
 
         if not self._pct:
             print("No hay datos registrados para generar figuras.")
             return
 
-        fullpath = os.path.join(self.fig_path, name + ".png")
+        fullpath = os.path.join(self.fig_path, self._testName + ".png")
 
-        fig, axs = plt.subplots(3, 2, figsize=(12, 14))
+        fig, axs = plt.subplots(4, 2, figsize=(12, 18))
         fig.suptitle("Resultados del Test Bench", fontsize=16)
 
         axs[0, 0].plot(self._pct, self._speeds)
@@ -275,12 +297,12 @@ class TestBench:
         axs[0, 1].plot(self._pct, self._thrusts)
         axs[0, 1].set_title("Empuje vs %")
         axs[0, 1].set_xlabel("%")
-        axs[0, 1].set_ylabel("Empuje (N)")
+        axs[0, 1].set_ylabel("Empuje (g)")
 
         axs[1, 0].plot(self._pct, self._torques)
         axs[1, 0].set_title("Par vs %")
         axs[1, 0].set_xlabel("%")
-        axs[1, 0].set_ylabel("Par (Nm)")
+        axs[1, 0].set_ylabel("Par (g*cm)")
 
         axs[1, 1].plot(self._pct, self._currents)
         axs[1, 1].set_title("Intensidad vs %")
@@ -292,19 +314,33 @@ class TestBench:
         axs[2, 0].set_xlabel("%")
         axs[2, 0].set_ylabel("Voltaje (V)")
 
+        axs[2, 1].plot(self._pct, self._Kt)
+        axs[2, 1].set_title("Kt vs %")
+        axs[2, 1].set_xlabel("%")
+        axs[2, 1].set_ylabel("Kt (N·m/A)")
+
+        axs[3, 0].plot(self._pct, self._Kv)
+        axs[3, 0].set_title("Kv vs %")
+        axs[3, 0].set_xlabel("%")
+        axs[3, 0].set_ylabel("Kv (rad/s/V)")
+
+        axs[3, 1].plot(self._pct, self._rendimiento)
+        axs[3, 1].set_title("Rendimiento vs %")
+        axs[3, 1].set_xlabel("%")
+        axs[3, 1].set_ylabel("Rendimiento (-)")
+
         plt.tight_layout()
         fig.savefig(fullpath, dpi=300)
         print("Figuras generadas")
         plt.close()
 
-
-    #SET CONFIGRACIÓN TEST
+    #Set configuracion del test
     def setTestConfig(self, config):
         """Añade los paraámetros del test al atributo _config"""
         self._config = config
 
 
-###############################
+# ----- MAIN ----- #
+# Si el programa se ejecuta desde este archivo con este nombre, instanciar objeto de TestBench()
 if __name__ == '__main__':
     tb = TestBench()
-    tb.finish("resultado_final")

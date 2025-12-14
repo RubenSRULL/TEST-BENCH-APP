@@ -41,8 +41,8 @@ Arquitectura cliente-servidor basada en MQTT:
 
 - ESP32  
 - Módulo HX711 (x2)  
-- Celdas de carga (x2 empuje y par)  
-- Sensor de corriente ACS712  
+- Celdas de carga (x2)  
+- Sensor de corriente ACS712 (30 A)
 - Tacómetro  
 - Controlador ESC  
 - Motor brushless + hélice  
@@ -53,7 +53,7 @@ Arquitectura cliente-servidor basada en MQTT:
 ## Software utilizado
 
 ### ESP32
-- Arduino IDE / PlatformIO
+- Arduino IDE
 - Librerías:
   - `HX711`
   - `WiFi`
@@ -69,5 +69,3 @@ Arquitectura cliente-servidor basada en MQTT:
 
 ### Comunicación
 - Mosquitto MQTT Broker
-
----
